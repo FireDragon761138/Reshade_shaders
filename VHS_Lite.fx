@@ -27,11 +27,12 @@
 
 #include "ReShade.fxh"
 
-// Dropout quality. 0 = Basic (single desynced held-line smear). 1 = High
-// Quality (dual-mode: uncompensated white-level "comet" streaks + a 7-tap
-// luma-held DOC smear -- research-accurate, costs a few more taps in-branch).
-#ifndef VHS_HIGH_QUALITY
-#define VHS_HIGH_QUALITY 0
+// Dropout quality. DEFAULT is High Quality (dual-mode: uncompensated white-level
+// "comet" streaks + a 7-tap luma-held DOC smear -- research-accurate). Define
+// VHS_BASIC_DROPOUTS = 1 to fall back to the cheaper single desynced held-line
+// smear (fewer taps; for weaker GPUs or older APIs).
+#ifndef VHS_BASIC_DROPOUTS
+#define VHS_BASIC_DROPOUTS 0
 #endif
 
 uniform float Timer < source = "timer"; >;
@@ -258,7 +259,7 @@ float3 PS_VHS(float4 pos : SV_Position, float2 texcoord : TEXCOORD) : SV_Target
         float r = hash21(float2(slot, k));
         if (r < dropAmt)
         {
-#if VHS_HIGH_QUALITY
+#if !VHS_BASIC_DROPOUTS
             float2 np = texcoord * ReShade::ScreenSize + k * 3.1;
 
             // ~28% are uncompensated bright streaks (the visible sparkle); the
