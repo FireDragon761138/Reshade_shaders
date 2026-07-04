@@ -29,6 +29,13 @@
 // real set with its own little quirks baked in: a touch of misconvergence and
 // white-balance drift, kept subtle so it reads as a "tuned" CRT, not a busted
 // one. No geometry error on purpose (that's where it tips into "ruined").
+// It also reads the Mask Type as the set's pedigree: Aperture Grille = the premium
+// Japanese Trinitron (tight, holds up for years), while Slot Mask and Shadow Mask
+// are the two mainstream in-line-gun tubes that filled ordinary living rooms -
+// peers, with the Price knob (not the mask) deciding build quality. Each tube type
+// is still wrong in a way that fits how it was built and how it ages.
+// The picture also boots into a restrained showroom default (cool ~9300K, mildly
+// punchy, sharpness left cranked) - what these sets actually looked like new.
 // 0 = flawless calibration (default; compiled out). Any other integer is a random
 // SEED, not a quality rank - each value is a different set off the line, so
 // there's an endless supply of them and unit 2 is no worse than unit 1. Flip it
@@ -98,7 +105,7 @@ uniform float PRICE <
                  "posh ones hide their sins better (convergence most of all) - though\n"
                  "even the cheapos usually nailed skin tone.\n"
                  "Left = penny-pincher, right = money's-no-object.";
-> = 0.0;
+> = 0.5;   // default: an average, middle-of-the-catalogue set
 
 uniform float AGE <
     ui_type = "slider"; ui_min = 0.0; ui_max = 20.0; ui_step = 0.5;
@@ -106,12 +113,12 @@ uniform float AGE <
     ui_tooltip = "How many years has this poor thing been left on? Box-fresh on the\n"
                  "left, two decades of Saturday-morning cartoons on the right.\n"
                  "\n"
-                 "Old tubes get tired: the picture dims, loses its tan, and drifts a\n"
-                 "touch green as the red gun clocks out first, while the corners go\n"
-                 "soft and the colours wander out of line. Doesn't care how much you\n"
+                 "Old tubes get tired: the picture dims, the whites go yellow and the\n"
+                 "colour washes out as the blue gun fades first, while the corners go\n"
+                 "soft and the guns wander out of line. Doesn't care how much you\n"
                  "paid - every set ends up here eventually.\n"
                  "0 = showroom shiny, 20 = grandma's attic.";
-> = 0.0;
+> = 4.0;   // default: a few years in - lived-in, not box-fresh, not clapped-out
 #endif
 
 // ====================  TV PICTURE  ====================
@@ -121,16 +128,36 @@ uniform float BRIGHTNESS <
     ui_category = "Picture";
     ui_tooltip = "Overall picture brightness, like a TV's brightness knob.\n"
                  "Raise it if the mask or scanlines make the image feel dim.\n"
+#if FACTORY_TUNING != 0
+                 "Factory Tuning starts it a touch hot - the showroom default,\n"
+                 "nudged back down by an owner who sort of cared.\n"
+#endif
                  "1.0 = unchanged.";
-> = 1.0;
+> =
+#if FACTORY_TUNING != 0
+    1.08;   // punchy factory default, nudged back from the showroom extreme
+#else
+    1.0;
+#endif
 
 uniform float CONTRAST <
     ui_type = "slider"; ui_min = 0.5; ui_max = 1.5; ui_step = 0.01;
     ui_label = "Contrast";
     ui_category = "Picture";
     ui_tooltip = "Contrast around mid-gray. Higher deepens blacks and brightens\n"
+#if FACTORY_TUNING != 0
+                 "whites for a punchier image; lower flattens it.\n"
+                 "Factory Tuning starts it mildly punchy - the showroom look, backed\n"
+                 "off from the crushed extreme. 1.0 = unchanged.";
+#else
                  "whites for a punchier image; lower flattens it. 1.0 = unchanged.";
-> = 1.0;
+#endif
+> =
+#if FACTORY_TUNING != 0
+    1.10;   // mildly punchy factory default (showroom, backed off the extreme)
+#else
+    1.0;
+#endif
 
 #if FACTORY_TUNING != 0
 uniform float SHARPNESS <
@@ -139,9 +166,11 @@ uniform float SHARPNESS <
     ui_category = "Picture";
     ui_tooltip = "That sharpness knob every set had, cranked up in every showroom\n"
                  "to make the picture 'pop' - really just edge overshoot faking\n"
-                 "detail. 0 = leave it alone. It's baked into the set's own circuitry,\n"
-                 "so it only shows up with Factory Tuning.";
-> = 0.0;
+                 "detail. Starts mildly cranked, like the factory left it and the\n"
+                 "owner never thought to turn it down; drag to 0 to leave it alone.\n"
+                 "It's baked into the set's own circuitry, so it only shows up with\n"
+                 "Factory Tuning.";
+> = 0.2;
 #endif
 
 uniform int TEMPERATURE <
@@ -154,9 +183,22 @@ uniform int TEMPERATURE <
                  "   Shadow Mask -> Warm (classic consumer-TV look);\n"
                  "   Aperture Grille & Slot Mask -> Neutral.\n"
                  "Neutral = untinted.\n"
-                 "Warm = leans red.\n"
-                 "Cool = leans blue (PC-monitor / high-colour-temp look).";
-> = 0;
+                 "Warm = leans red (closer to broadcast spec - the enthusiast's pick).\n"
+                 "Cool = leans blue (PC-monitor / high-colour-temp look)."
+#if FACTORY_TUNING != 0
+                 "\n\n"
+                 "Factory Tuning defaults this to Cool: the bluish (~9300K) showroom\n"
+                 "white these sets actually shipped at and most owners never touched.\n"
+                 "Crank Age and the blue fades on its own, warming it back toward\n"
+                 "neutral - no need to touch this."
+#endif
+                 ;
+> =
+#if FACTORY_TUNING != 0
+    3;      // Cool: the bluish ~9300K showroom default these sets shipped at
+#else
+    0;
+#endif
 
 #if FACTORY_TUNING != 0
 uniform float TINT <
@@ -218,7 +260,8 @@ uniform float SOFTNESS <
     ui_category = "Scanlines";
     ui_tooltip = "Horizontal blur along each scan line, emulating the beam's spot\n"
                  "size. 0 = sharp / pixel-crisp; higher = softer, more analog.\n"
-                 "Measured in pixels.";
+                 "Measured in pixels at 1080p and auto-scaled to your resolution, so\n"
+                 "the beam keeps the same apparent softness on a 1440p / 4K display.";
 > = 1.0;
 
 // =======================  MASK  =======================
@@ -230,18 +273,21 @@ uniform int MASK_TYPE <
     ui_tooltip = "The phosphor pattern of the simulated tube:\n"
                  "None - no mask.\n"
                  "Aperture Grille - vertical RGB stripes (Sony Trinitron / PVM).\n"
-                 "Slot Mask - tall vertical RGB slots, offset like bricks (consumer TV).\n"
-                 "Shadow Mask - RGB triads woven into fine dots (PC monitor / TV).";
-> = 3;
+                 "Slot Mask - tall vertical RGB slots, offset like bricks. The in-line-\n"
+                 "   gun tube that filled most US and UK living rooms (default).\n"
+                 "Shadow Mask - RGB triads woven into fine dots (TV and PC monitor).";
+> = 2;
 
 uniform float MASK_SIZE <
-    ui_type = "slider"; ui_min = 1.0; ui_max = 6.0; ui_step = 1.0;
+    ui_type = "slider"; ui_min = 0.0; ui_max = 6.0; ui_step = 1.0;
     ui_label = "Mask Size";
     ui_category = "Phosphor Mask";
     ui_tooltip = "Size of the phosphor pattern, in screen pixels per stripe.\n"
-                 "1 is finest; increase on high-resolution (1440p / 4K) displays\n"
-                 "so the mask stays visible. Use whole numbers to avoid shimmer (moire).";
-> = 1.0;
+                 "0 = Auto: picks a whole-pixel size that holds the same apparent\n"
+                 "mask at any resolution (1 @ 1080p, 2 @ 4K) and stays moire-safe\n"
+                 "(recommended, default). Or set 1-6 by hand; 1 is finest. Use whole\n"
+                 "numbers to avoid shimmer (moire).";
+> = 0.0;
 
 uniform float MASK_STRENGTH <
     ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01;
@@ -324,6 +370,27 @@ float2 Warp(float2 uv)
 }
 
 #if FACTORY_TUNING != 0
+// Per-mask provenance. Only one tube type really stands apart: the aperture
+// grille (Sony Trinitron / Mitsubishi Diamondtron) was the premium Japanese set -
+// tighter QC, finer pitch, and beam-current feedback that holds calibration for
+// years. The other two, slot mask and dot-trio shadow mask, were the mainstream
+// in-line-gun tubes that filled ordinary US and European living rooms; they're
+// peers, NOT a quality ladder. Which mask a set used didn't decide how well it was
+// built - its price did, and the Price knob already covers that. Dot-trio shadow
+// mask spanned a slightly wider range (cheap sets through fine-pitch monitors), so
+// it carries a touch more scatter than slot mask, but they're close.
+// Returned packed: x = convergence tightness, y = focus tightness, z = general
+// variance (white balance / brightness / contrast / saturation / uniformity),
+// w = how gracefully it ages (mechanical drift, dimming, colour hold). Lower is
+// tighter/better; these scale the per-unit error so each tube is wrong in a way
+// that fits how it was built. Price and Age still ride on top.
+float4 ProvFactors()
+{
+    if (MASK_TYPE == 1) return float4(0.50, 0.60, 0.70, 0.65);   // aperture grille (premium JP)
+    if (MASK_TYPE == 2) return float4(0.88, 0.90, 0.90, 0.90);   // slot mask (mainstream default)
+    return float4(0.94, 0.90, 0.90, 0.94);                       // shadow mask / none (mainstream)
+}
+
 // Compact RGB<->HSV (standard formulations) for the skin-tone correction.
 float3 RGBtoHSV(float3 c)
 {
@@ -364,14 +431,15 @@ float3 SkinTone(float3 c)
     hsv.x = frac(hsv.x + bias * MAX * sel);
 
 #if FACTORY_TUNING != 0
-    // Whoever set this one's tint at the factory had it a smidge off - 3-5 degrees
-    // the wrong way, pick-your-direction. Splashing out on a nicer set (Price)
-    // barely helps: getting hue about right was cheap, so even the budget boxes
-    // managed it - hence the narrowest quality gap (~15%).
+    // Every NTSC set shipped with a built-in "red push" - the chroma decoder was
+    // deliberately biased to warm up skin under the bluish (~9300K) white these
+    // sets ran at. So flesh leans a consistent couple of degrees redder, not a
+    // random wobble; only how much varies unit to unit (~1.5-3 deg). Getting hue
+    // about right was cheap, so even the budget boxes managed it and a nicer set
+    // (Price) barely pulls it back - hence the narrowest quality gap.
     float ft   = float(FACTORY_TUNING);
-    float mag  = (3.0 + Hash(ft + 12.9) * 2.0) * lerp(1.0, 0.85, PRICE);  // 3..5 deg
-    float sgn  = (Hash(ft + 11.7) < 0.5) ? -1.0 : 1.0;
-    hsv.x = frac(hsv.x + (sgn * mag / 360.0) * sel);
+    float mag  = (1.5 + Hash(ft + 12.9) * 1.5) * lerp(1.0, 0.8, PRICE);  // 1.5..3 deg, redward
+    hsv.x = frac(hsv.x - (mag / 360.0) * sel);
 #endif
 
     return HSVtoRGB(hsv);
@@ -405,16 +473,18 @@ float3 ApplyTV(float3 c)
     // washed the mids and burned the highlights, worst on a cheap set. The
     // Hash() terms fold to compile-time constants, so this is a handful of mads.
     float ft = float(FACTORY_TUNING);
-    float pv = lerp(1.0, 2.0 / 3.0, PRICE);        // Nice = ~1/3 less variance
+    // Nice set = ~1/3 less variance; a premium tube type (aperture grille) tighter
+    // still, a budget shadow mask at the full baseline.
+    float pv = lerp(1.0, 2.0 / 3.0, PRICE) * ProvFactors().z;
     // "White" is never quite white - greys lean a little off-colour (+/- ~1.5%).
     c *= 1.0 + (float3(Hash(ft + 5.2), Hash(ft + 6.4), Hash(ft + 7.8)) - 0.5) * 0.03 * pv;
     // Brightness and contrast were never set the same on any two units (+/- ~5%
     // each); contrast pivots on signal mid-grey, like the knob it emulates.
     c *= 1.0 + (Hash(ft + 9.3) - 0.5) * 0.10 * pv;
     c  = (c - 0.5) * (1.0 + (Hash(ft + 10.1) - 0.5) * 0.10 * pv) + 0.5;
-    // Colour cranked a bit hot from the factory (+5-8%) so it'd "pop" in the shop.
+    // Colour nudged a touch hot from the factory (+3-6%) so it'd "pop" in the shop.
     float lumF = dot(c, LUMA);
-    c = lerp(float3(lumF, lumF, lumF), c, 1.0 + (0.05 + Hash(ft + 11.3) * 0.03) * pv);
+    c = lerp(float3(lumF, lumF, lumF), c, 1.0 + (0.03 + Hash(ft + 11.3) * 0.03) * pv);
 #endif
     c  = (c - 0.5) * CONTRAST + 0.5;   // contrast pivots on mid-gray
     c *= BRIGHTNESS;                   // then overall gain
@@ -443,20 +513,24 @@ float3 SampleSoftLinear(float2 pos)
 #if CRT_QUALITY == 0
     return TapLinear(pos);                               // 1-tap: no horizontal softening
 #else
-    float soft = SOFTNESS;
+    // Softness is authored in 1080p pixels; scale it to the actual display so the
+    // beam holds the same apparent spot size at 1440p / 4K (0 stays sharp).
+    float soft = SOFTNESS * (BUFFER_HEIGHT / 1080.0);
 #if FACTORY_TUNING != 0
-    // Focus was trimmed for the sweet spot in the middle and nobody cared about
-    // the corners, so it's crisp in the centre and goes mushy at the edges:
-    // ~0.5-1px extra spot at centre, ~1.5-3px out in the corners (480-ref),
-    // scaled with resolution. A posh set (Price) holds focus tighter; an old one
-    // (Age) lets it wander another ~50% by the time it's 20.
+    // Focus was trimmed for the sweet spot in the middle, so the centre stays
+    // near-crisp and the spot only swells out toward the corners where the beam
+    // lands obliquely - an inherent tube trait, tidy in the middle, soft at the
+    // edges. A posh set (Price) holds focus tighter, and so does a better tube type
+    // (aperture grille sharpest, shadow mask softest); an old one (Age) lets it
+    // wander another ~50% by the time it's 20 - though a premium tube holds on.
     float ft  = float(FACTORY_TUNING);
+    float4 prov = ProvFactors();
     float rad = length(pos - 0.5) * 1.414;
     float res = BUFFER_HEIGHT / 480.0;                    // 480p-ref px -> this display
-    float priceVar = lerp(1.0, 2.0 / 3.0, PRICE);
-    float ageSoft  = 1.0 + (AGE / 20.0) * 0.5;
-    // ~1px extra spot at centre, ~2-3px at the corners (@1080p).
-    soft += (0.44 + Hash(ft + 8.6) * 0.15 + rad * (0.5 + Hash(ft + 9.9) * 0.4))
+    float priceVar = lerp(1.0, 2.0 / 3.0, PRICE) * prov.y;
+    float ageSoft  = 1.0 + (AGE / 20.0) * prov.w * 0.5;
+    // near-crisp centre (~0.3-0.5px), ~1.5-2px softer at the corners (@1080p).
+    soft += (0.12 + Hash(ft + 8.6) * 0.10 + rad * rad * (0.6 + Hash(ft + 9.9) * 0.5))
           * res * priceVar * ageSoft;
 #endif
     if (soft <= 0.0) return TapLinear(pos);              // no beam blur -> single fetch
@@ -500,21 +574,27 @@ float3 StripeRGB(float phase)
 }
 
 // Procedural phosphor mask evaluated in output-pixel space. Built from triad
-// geometry so it scales with MASK_SIZE. Peaks stay at maskLight (the gentle
+// geometry so it scales with the stripe size. Peaks stay at maskLight (the gentle
 // fakelottes/lottes level); only the horizontal seam's dimming is compensated
 // so slot/shadow masks hold the same average brightness as the aperture grille.
 float3 PhosphorMask(float2 vpos)
 {
     if (MASK_TYPE == 0) return float3(1.0, 1.0, 1.0);
 
-    float triad    = 3.0 * MASK_SIZE;   // pixels per full RGB triad
+    // Auto (MASK_SIZE < 1): pick a whole-pixel stripe width that keeps the mask a
+    // constant apparent size across resolutions (1px @ 1080p, 2px @ 4K), rounded to
+    // an integer so it stays aligned to the pixel grid and moire-free.
+    float msize = (MASK_SIZE < 1.0) ? max(1.0, floor(BUFFER_HEIGHT / 1080.0 + 0.5))
+                                    : MASK_SIZE;
+
+    float triad    = 3.0 * msize;       // pixels per full RGB triad
     float xoff     = 0.0;               // horizontal stagger of alternate rows
     float seam     = 1.0;               // horizontal gap darkening (slot/shadow)
     float seamFrac = 0.0;               // fraction of the row that gap occupies
 
     if (MASK_TYPE == 2)              // slot mask: vertical RGB triads broken into tall
     {                                // brick-offset slots (consumer-TV slot mask)
-        float cell = MASK_SIZE * 4.0;                             // tall slot cell (px)
+        float cell = msize * 4.0;                                 // tall slot cell (px)
         float col  = floor(vpos.x / triad);                       // which triad column
         float yoff = (frac(col * 0.5) < 0.5) ? 0.0 : cell * 0.5;  // interleave alt. columns
         seamFrac   = 0.30;                                        // slim gap between slots
@@ -522,7 +602,7 @@ float3 PhosphorMask(float2 vpos)
     }
     else if (MASK_TYPE == 3)         // shadow mask: RGB triads woven into fine dots -
     {                                // the compressed-TV phosphor look of fakelottes/lottes
-        float cell = MASK_SIZE * 2.0;                             // short cell -> dots
+        float cell = msize * 2.0;                                 // short cell -> dots
         float col  = floor(vpos.x / triad);                       // which triad column
         float yoff = (frac(col * 0.5) < 0.5) ? 0.0 : cell * 0.5;  // interleave alt. columns
         seamFrac   = 0.5;                                         // half of each cell is gap
@@ -658,27 +738,40 @@ float4 PS_CRTTV_Lite(float4 vpos : SV_Position, float2 texcoord : TEXCOORD) : SV
     float2 rc  = pos - 0.5;                               // -0.5..0.5 from centre
     float  rad = length(rc) * 1.414;                      // ~0 centre, ~1 corner
 
-    // Paying more buys tighter tolerances; getting older loosens them again. The
-    // money mostly shows in convergence (widest gap, ~40% off at Nice), barely at
-    // all in tint, and a flat ~1/3 everywhere else - while Age comes for the
-    // mechanical bits (convergence) no matter what you paid.
-    float priceVar  = lerp(1.0, 2.0 / 3.0, PRICE);        // flat ~33% (WB, bright, sat, uniformity)
-    float priceConv = lerp(1.0, 0.60,      PRICE);        // convergence: widest gap (~40%)
-    float ageN      = AGE / 20.0;                         // 0 (new) .. 1 (20 years)
-    float ageConv   = 1.0 + ageN * 0.7;                   // convergence drifts ~+70% by 20 yrs
+    // Paying more buys tighter tolerances; getting older loosens them again; and
+    // the tube's pedigree (ProvFactors, by Mask Type) sets the baseline both ride
+    // on. The money mostly shows in convergence (widest gap, ~40% off at Nice),
+    // barely at all in tint, and a flat ~1/3 everywhere else - while Age comes for
+    // the mechanical bits (convergence) no matter what you paid.
+    float4 prov     = ProvFactors();                      // per-tube-type quality & aging grace
+    float priceVar  = lerp(1.0, 2.0 / 3.0, PRICE) * prov.z;   // WB / bright / sat / uniformity
+    float priceConv = lerp(1.0, 0.60,      PRICE) * prov.x;   // convergence: widest gap (~40%)
+    float ageN      = AGE / 20.0;                         // 0 (new) .. 1 (20 years) - phosphor clock
+    // Mechanical/emission ageing (convergence drift, dimming, white-balance hold)
+    // is what premium sets shrug off - beam-current feedback and a stiffer yoke -
+    // so it runs on a slowed clock; the phosphor's own blue-first fade (ageN) is
+    // chemistry every tube shares.
+    float ageMech   = ageN * prov.w;
+    float ageConv   = 1.0 + ageMech * 0.7;                // convergence drift over life
 
     // The three electron guns never quite agree on where to point, so colour
-    // fringes split apart - barely at the centre (~0.15-0.25% of screen height,
-    // =1.5-2.5px @1080p) and worse toward the corners (~0.6-1%, =6-11px @1080p),
-    // lopsided per axis because the yoke sat a touch crooked. Red and blue lean
-    // opposite ways.
+    // fringes split apart - a hair at the centre (~0.04-0.07% of screen height,
+    // =0.4-0.8px @1080p) and wider toward the corners (~0.15-0.25%, =1.5-2.5px
+    // @1080p), lopsided per axis because the yoke sat a touch crooked. That's an
+    // inherent three-gun tube trait, not neglect - even a nicely lined-up consumer
+    // set does this much. Red and blue lean opposite ways.
     float  ang  = Hash(ft + 1.3) * 6.2831853;             // centre-error direction
-    float  cmag = (0.0015 + Hash(ft + 3.7) * 0.0010) * priceConv * ageConv;
-    float2 gv   = float2(0.0045 + Hash(ft + 2.1) * 0.0025,// per-axis growth -> ~0.6-1% corner...
-                         0.0045 + Hash(ft + 5.9) * 0.0025) * priceConv * ageConv; // anisotropy
+    float  cmag = (0.0004 + Hash(ft + 3.7) * 0.0003) * priceConv * ageConv;
+    float2 gv   = float2(0.0011 + Hash(ft + 2.1) * 0.0007,// per-axis growth -> ~1.5-2.5px corner...
+                         0.0011 + Hash(ft + 5.9) * 0.0007) * priceConv * ageConv; // anisotropy
     // fraction-of-height -> UV: * BUFFER_HEIGHT * (1/W, 1/H) = aspect-correct offset.
     float2 conv = (float2(cos(ang), sin(ang)) * cmag + rc * gv * 2.0)
                 * BUFFER_HEIGHT * SourceSize.zw;
+    // Aperture grille runs continuous vertical stripes, so a vertical convergence
+    // error just slides along the stripe and never fringes - only the horizontal
+    // R/B split shows. Collapse the invisible axis on that tube type (on top of its
+    // already-tight convergence), which is exactly why Trinitrons looked so locked-in.
+    if (MASK_TYPE == 1) conv.y *= 0.25;
     // Single graded tap, not a full softening pass: the R/B fringe is a displaced
     // error, and re-softening it is invisible but costs a whole extra Sample per
     // channel (several scattered fetches + focus-drift recompute). This is the big
@@ -691,20 +784,32 @@ float4 PS_CRTTV_Lite(float4 vpos : SV_Position, float2 texcoord : TEXCOORD) : SV
     // light washed the mids and burned the highlights. What's left below is
     // genuinely light-domain: emission and phosphor effects.)
 
-    // The corners never got quite as much juice as the middle - ~8-10% dimmer out
-    // at the edges.
-    lin *= 1.0 - rad * rad * (0.08 + Hash(ft + 13.1) * 0.02) * priceVar;
+    // Center-to-edge brightness falloff - the CRT "bulls-eye". The beam throws
+    // farther to the corners and lands obliquely, spreading its energy, so they run
+    // dimmer. Inherent tube geometry, not neglect: pro broadcast monitors were
+    // speced near ~10% at the limit (EBU 3273/3320, +/-5% of mean), ordinary
+    // consumer sets ran ~12-18% and budget worse. Here it lands ~10-14% at the
+    // corner by default, up to ~18% on a cheap set, down to ~7-9% on a premium tube.
+    // Age does NOT deepen this: the falloff is fixed geometry, and the overall age
+    // dimming below scales the whole picture (corners and all) down together, so the
+    // vignette just blends with the dimming at its built-in ratio. (If anything,
+    // dose-driven phosphor wear concentrates in the heavily-used centre and flattens
+    // the bulls-eye - but that needs a burn-in model we don't have, so uniform dims.)
+    lin *= 1.0 - rad * rad * (0.12 + Hash(ft + 13.1) * 0.08) * priceVar;
 
     // --- Age: the slow revenge of time, piled on top no matter what you paid. ---
     // Leave a tube on long enough and the whole picture just gives up and dims
-    // (~10-20% down by a decade, up to ~22% at 20 yrs).
-    lin *= 1.0 - ageN * 0.22;
-    // The red gun always tires first while blue and green soldier on, so an old set
-    // slowly loses its warmth and goes a bit sickly green. How fast depends on the
-    // unit; green wilts a little too, blue hangs on.
-    float redWear = ageN * (0.08 + Hash(ft + 14.2) * 0.08);   // ~8-16% red loss at 20 yrs
-    lin.r *= 1.0 - redWear;
-    lin.g *= 1.0 - redWear * 0.35;
+    // (~10-20% down by a decade, up to ~22% at 20 yrs) - unless it's a premium tube
+    // riding its beam-current feedback, which props the brightness up for years.
+    lin *= 1.0 - ageMech * 0.22;
+    // Blue phosphor (ZnS:Ag) always tires first, green follows, red is the tough
+    // one - so an old set slowly loses its blue, the whites go yellow and the whole
+    // picture drifts warm and a touch jaundiced. A premium set's auto-cutoff loop
+    // rebalances the drives to hold white longer (ageMech), so it yellows slower;
+    // green wilts a little too, red hangs on.
+    float blueWear = ageMech * (0.10 + Hash(ft + 14.2) * 0.10);  // ~10-20% blue loss at 20 yrs
+    lin.b *= 1.0 - blueWear;
+    lin.g *= 1.0 - blueWear * 0.4;
     // As the guns weaken the colour washes out too (~20% by 20 yrs) - so that punchy
     // showroom set ends up both dim and faded, the exact opposite of how it shipped.
     float lumAge = dot(lin, LUMA);

@@ -143,7 +143,8 @@ uniform float SOFTNESS <
     ui_category = "Scanlines";
     ui_tooltip = "Horizontal blur along each scan line, emulating the beam's spot\n"
                  "size. 0 = sharp / pixel-crisp; higher = softer, more analog.\n"
-                 "Measured in pixels.";
+                 "Measured in pixels at 1080p and auto-scaled to your resolution, so\n"
+                 "the beam keeps the same apparent softness on a 1440p / 4K display.";
 > = 1.0;
 
 // =======================  MASK  =======================
@@ -160,13 +161,15 @@ uniform int MASK_TYPE <
 > = 3;
 
 uniform float MASK_SIZE <
-    ui_type = "slider"; ui_min = 1.0; ui_max = 6.0; ui_step = 1.0;
+    ui_type = "slider"; ui_min = 0.0; ui_max = 6.0; ui_step = 1.0;
     ui_label = "Mask Size";
     ui_category = "Phosphor Mask";
     ui_tooltip = "Size of the phosphor pattern, in screen pixels per stripe.\n"
-                 "1 is finest; increase on high-resolution (1440p / 4K) displays\n"
-                 "so the mask stays visible. Use whole numbers to avoid shimmer (moire).";
-> = 1.0;
+                 "0 = Auto: picks a whole-pixel size that holds the same apparent\n"
+                 "mask at any resolution (1 @ 1080p, 2 @ 4K) and stays moire-safe\n"
+                 "(recommended, default). Or set 1-6 by hand; 1 is finest. Use whole\n"
+                 "numbers to avoid shimmer (moire).";
+> = 0.0;
 
 uniform float MASK_STRENGTH <
     ui_type = "slider"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01;
@@ -287,7 +290,9 @@ float3 SampleSoftLinear(float2 pos)
 #if CRT_QUALITY == 0
     return TapLinear(pos);                               // 1-tap: no horizontal softening
 #else
-    float soft = SOFTNESS;
+    // Softness is authored in 1080p pixels; scale it to the actual display so the
+    // beam holds the same apparent spot size at 1440p / 4K (0 stays sharp).
+    float soft = SOFTNESS * (BUFFER_HEIGHT / 1080.0);
     if (soft <= 0.0) return TapLinear(pos);              // no beam blur -> single fetch
 #ifdef ROTATE_SCANLINES
     float2 dir = float2(0.0, SourceSize.w) * soft;       // beam runs vertically
@@ -329,21 +334,27 @@ float3 StripeRGB(float phase)
 }
 
 // Procedural phosphor mask evaluated in output-pixel space. Built from triad
-// geometry so it scales with MASK_SIZE. Peaks stay at maskLight (the gentle
+// geometry so it scales with the stripe size. Peaks stay at maskLight (the gentle
 // fakelottes/lottes level); only the horizontal seam's dimming is compensated
 // so slot/shadow masks hold the same average brightness as the aperture grille.
 float3 PhosphorMask(float2 vpos)
 {
     if (MASK_TYPE == 0) return float3(1.0, 1.0, 1.0);
 
-    float triad    = 3.0 * MASK_SIZE;   // pixels per full RGB triad
+    // Auto (MASK_SIZE < 1): pick a whole-pixel stripe width that keeps the mask a
+    // constant apparent size across resolutions (1px @ 1080p, 2px @ 4K), rounded to
+    // an integer so it stays aligned to the pixel grid and moire-free.
+    float msize = (MASK_SIZE < 1.0) ? max(1.0, floor(BUFFER_HEIGHT / 1080.0 + 0.5))
+                                    : MASK_SIZE;
+
+    float triad    = 3.0 * msize;       // pixels per full RGB triad
     float xoff     = 0.0;               // horizontal stagger of alternate rows
     float seam     = 1.0;               // horizontal gap darkening (slot/shadow)
     float seamFrac = 0.0;               // fraction of the row that gap occupies
 
     if (MASK_TYPE == 2)              // slot mask: vertical RGB triads broken into tall
     {                                // brick-offset slots (consumer-TV slot mask)
-        float cell = MASK_SIZE * 4.0;                             // tall slot cell (px)
+        float cell = msize * 4.0;                                 // tall slot cell (px)
         float col  = floor(vpos.x / triad);                       // which triad column
         float yoff = (frac(col * 0.5) < 0.5) ? 0.0 : cell * 0.5;  // interleave alt. columns
         seamFrac   = 0.30;                                        // slim gap between slots
@@ -351,7 +362,7 @@ float3 PhosphorMask(float2 vpos)
     }
     else if (MASK_TYPE == 3)         // shadow mask: RGB triads woven into fine dots -
     {                                // the compressed-TV phosphor look of fakelottes/lottes
-        float cell = MASK_SIZE * 2.0;                             // short cell -> dots
+        float cell = msize * 2.0;                                 // short cell -> dots
         float col  = floor(vpos.x / triad);                       // which triad column
         float yoff = (frac(col * 0.5) < 0.5) ? 0.0 : cell * 0.5;  // interleave alt. columns
         seamFrac   = 0.5;                                         // half of each cell is gap
