@@ -81,8 +81,9 @@ uniform float ChromaBleed <
     ui_type = "slider";
     ui_min = 0.0; ui_max = 16.0; ui_step = 0.1;
     ui_label = "Chroma Bleed";
-    ui_tooltip = "How far color smears horizontally, in pixels.\n"
-                 "This is the main NTSC 'look' - color running sideways.";
+    ui_tooltip = "How far color smears horizontally - the main NTSC 'look'.\n"
+                 "In pixels at 1080p; scales with your resolution and assumes a 4:3\n"
+                 "NTSC frame, so the smear holds its apparent width on any display.";
     ui_category = "NTSC Blur";
 > = 6.0;
 
@@ -90,7 +91,8 @@ uniform float LumaBlur <
     ui_type = "slider";
     ui_min = 0.0; ui_max = 6.0; ui_step = 0.1;
     ui_label = "Luma Softness";
-    ui_tooltip = "Horizontal softness of brightness/detail, in pixels.\n"
+    ui_tooltip = "Horizontal softness of brightness/detail. In pixels at 1080p,\n"
+                 "scales with resolution and is 4:3-relative like Chroma Bleed.\n"
                  "Keep this well below Chroma Bleed - sharp luma, soft color\n"
                  "is what sells the analog look. (S-Video runs it ~2x sharper.)";
     ui_category = "NTSC Blur";
@@ -133,15 +135,21 @@ float3 YIQtoRGB(float3 c)
 // --------------------------------------------------------------------------
 float3 BlurYIQ(float2 uv, float sigmaL, float3 center)
 {
-    sigmaL         = max(sigmaL, 1e-3);
-    float sigmaC   = max(ChromaBleed * 0.5, 1e-3);
+    // Horizontal bleed is a fixed fraction of the 4:3 NTSC picture width, so it scales
+    // with the buffer (via height) and assumes a 4:3 frame - NOT the display's actual
+    // aspect. Slider values are pixels in a 1080-line 4:3 frame; height/1080 keeps
+    // 1080p unchanged and holds the smear's apparent width at any resolution/aspect.
+    float res      = BUFFER_HEIGHT / 1080.0;
+    float bleed    = ChromaBleed * res;
+    sigmaL         = max(sigmaL * res, 1e-3);
+    float sigmaC   = max(bleed * 0.5, 1e-3);
     // Tap reach covers the WIDER of the two blurs (out to luma's ~3 sigma), so the
     // luma pass is still sampled when Chroma Bleed is small or zero. Luma and chroma
     // SHARE these taps, so at very high Chroma Bleed the spacing widens and the narrow
     // luma Gaussian starts to undersample - raise NTSC_BLUR_SAMPLES if luma ever looks
     // stepped. (Separate luma/chroma loops would fix it but double the texture fetches,
     // not worth it for this cheap stand-in.)
-    float reach    = max(ChromaBleed, sigmaL * 3.0);
+    float reach    = max(bleed, sigmaL * 3.0);
     float pxPerTap = reach / NTSC_BLUR_SAMPLES;
 
     float3 c0 = RGBtoYIQ(center);   // reuse the centre texel the caller already fetched (no re-sample)
@@ -171,6 +179,56 @@ float3 BlurYIQ(float2 uv, float sigmaL, float3 center)
     return float3(sumY / wY, sumIQ / wC);
 }
 
+#if NTSC_ADVANCED
+// ---- Analog grit (SHARED - applies to both composite and S-Video) ----------
+// It's signal-path noise (cables, transmission, tape), present on any analog feed,
+// so unlike dot crawl it belongs to both subsystems.
+uniform float timer < source = "timer"; >;   // ms since start - drives grit re-roll and the crawl
+
+uniform float AnalogNoise <
+    ui_type = "slider";
+    ui_min = 0.0; ui_max = 1.0; ui_step = 0.01;
+    ui_label = "Analog Warmth";
+    ui_tooltip = "That analog 'warmth' - which is really the organic grain and noise a\n"
+                 "real feed always has. Fine white luma grain plus coarser COLOURED\n"
+                 "chroma noise that streaks horizontally and shows worst in dark areas\n"
+                 "(the composite/VHS look). On composite AND S-Video, but S-Video is\n"
+                 "cleaner - much less colour noise (it skips the demod that adds it) and\n"
+                 "slightly less grain. Signal-path noise, not a Y/C artifact. 0 = pristine.";
+    ui_category = "Advanced (analog signal)";
+> = 0.35;
+
+// Cheap hash in [0,1].
+float Hash21(float2 p) { return frac(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453); }
+
+// Grit on the final YIQ, shared by both paths: fine luma grain + coarse coloured
+// chroma streaks (worst in the dark). Cells are 1080p-referenced so the grain holds
+// apparent size across resolutions, and it re-rolls at ~60 Hz (field rate) so it
+// reads as live noise, not a frozen texture overlay. lumaMul/chromaMul let each path
+// set its own level: S-Video is cleaner - a LOT on chroma (it skips the composite
+// demodulation that adds most of the colour noise), a little on luma.
+float3 ApplyGrit(float3 yiq, float2 vpos, float lumaMul, float chromaMul)
+{
+    if (AnalogNoise <= 0.0) return yiq;
+    float res = BUFFER_HEIGHT / 1080.0;
+    float ts  = floor(timer * 0.06);                      // ~60 Hz re-roll (field rate)
+    ts       -= floor(ts / 1024.0) * 1024.0;              // wrap to [0,1024) for hash precision (manual mod)
+
+    // Fine luma grain - monochrome, uniform.
+    float2 gp = floor(vpos / res);
+    yiq.x += (Hash21(gp + ts) - 0.5) * AnalogNoise * lumaMul * 0.10;
+
+    // Coarse coloured chroma streaks (low chroma bandwidth -> ~3px horizontal cells),
+    // worst in the dark - the composite/VHS colour-speckle look.
+    float  dark = saturate(1.1 - yiq.x);
+    float2 cp   = float2(floor(vpos.x / (3.0 * res)), floor(vpos.y / res)) + ts;
+    float2 cn   = float2(Hash21(cp) - 0.5, Hash21(cp + 19.7) - 0.5);
+    yiq.yz += cn * AnalogNoise * chromaMul * 0.20 * dark;
+
+    return yiq;
+}
+#endif  // NTSC_ADVANCED
+
 #if NTSC_SVIDEO
 // ============================================================================
 //  S-VIDEO SUBSYSTEM  (separate Y/C - its own path)
@@ -181,6 +239,9 @@ float3 PS_NTSCBlur(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
 {
     float3 orig = tex2D(ReShade::BackBuffer, uv).rgb;
     float3 yiq  = BlurYIQ(uv, LumaBlur * 0.5, orig);   // full-bandwidth luma: ~2x sharper than composite
+#if NTSC_ADVANCED
+    yiq = ApplyGrit(yiq, pos.xy, 0.75, 0.35);          // S-Video: cleaner - esp. chroma (no demod noise)
+#endif
     return lerp(orig, saturate(YIQtoRGB(yiq)), Strength);
 }
 
@@ -199,19 +260,18 @@ float3 PS_NTSCBlur(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
     #define NTSC_SUBCARRIER_CYCLES 227.5
 #endif
 
-// Signal lines the dot-crawl phase flips across - the vertical scale of the pattern
-// (dot crawl flips once per scanline). This MIRRORS CRT_TV_Lite's Scanline Count
-// exactly, using the same rule, so the dots track the tube's scanlines at every
-// resolution:
-//   0 = Auto: ~1/4 screen height (~4px pitch) - the identical rule CRT_TV_Lite's
-//             auto scanlines use, so the two stay locked with no setup.
-//   N       = a fixed line count (240 / 480 / ...) - match this to the tube's
-//             Scanline Count if you pin that to a specific value.
-#ifndef NTSC_DOTCRAWL_LINES
-    #define NTSC_DOTCRAWL_LINES 0
-#endif
-
-uniform float timer < source = "timer"; >;   // ms since start - drives the crawl in real time
+uniform float DotCrawlLines <
+    ui_type = "slider";
+    ui_min = 0.0; ui_max = 1080.0; ui_step = 1.0;
+    ui_label = "Scanlines";
+    ui_tooltip = "Signal lines the dot-crawl checkerboard flips across - its vertical\n"
+                 "scale (it flips phase once per scanline). Match this to CRT_TV_Lite's\n"
+                 "Scanline Count so the dots stay locked to the tube's scanlines.\n"
+                 "0 = Auto: ~1/4 screen height (~4px) - the same rule CRT_TV_Lite's auto\n"
+                 "scanlines use, so leaving both on Auto keeps them matched, no setup.\n"
+                 "Or pin a count: 240 (240p / PSX-era), 480 (480i / PS2-era).";
+    ui_category = "Advanced (composite signal)";
+> = 0.0;
 
 uniform float DotCrawl <
     ui_type = "slider";
@@ -221,11 +281,10 @@ uniform float DotCrawl <
                  "separate from luma leaks back as a fine checkerboard of dots along\n"
                  "colour edges, flipping phase every line and field so it appears to\n"
                  "crawl. Strongest at saturated horizontal colour boundaries.\n"
-                 "Vertically it tracks CRT_TV_Lite's scanlines (NTSC_DOTCRAWL_LINES\n"
-                 "mirrors the tube's Scanline Count - leave both Auto or pin the same).\n"
+                 "Vertically it tracks the tube's scanlines - see the Scanlines control.\n"
                  "0 = off. Composite only (S-Video separates Y/C, so it has none).";
     ui_category = "Advanced (composite signal)";
-> = 0.4;
+> = 0.5;
 #endif  // NTSC_ADVANCED
 
 float3 PS_NTSCBlur(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
@@ -245,8 +304,8 @@ float3 PS_NTSCBlur(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
         // Vertical scale = one phase flip per scanline, using CRT_TV_Lite's exact
         // Scanline Count rule (Auto = ~1/4 screen height / ~4px), so the dots stay
         // locked to the tube's scanlines at any resolution.
-        float lines = (NTSC_DOTCRAWL_LINES < 1) ? BUFFER_HEIGHT * 0.25
-                                                : float(NTSC_DOTCRAWL_LINES);
+        float lines = (DotCrawlLines < 1.0) ? BUFFER_HEIGHT * 0.25
+                                            : DotCrawlLines;
 
         // Chroma edge across one signal line -> hanging dots concentrate at colour
         // boundaries (offset is 1/lines, i.e. one scanline), scaled by how saturated
@@ -265,12 +324,17 @@ float3 PS_NTSCBlur(float4 pos : SV_Position, float2 uv : TEXCOORD) : SV_Target
         // on a paused frame). ~10 lines/s up. The 0.5*vline term still gives the
         // 180-deg-per-line checkerboard flip.
         float vline = pos.y * lines / BUFFER_HEIGHT;                      // scanline coordinate
-        float phase = (pos.x / BUFFER_WIDTH) * NTSC_SUBCARRIER_CYCLES     // horizontal subcarrier
-                    + 0.5 * (vline + timer * 0.01);                       // per-line flip + upward crawl
+        // Subcarrier spans the 4:3 NTSC active LINE, not the raw (maybe 16:9) buffer -
+        // derive that width from the buffer height * 4/3. 227.5 cyc per 4:3 line.
+        float phase = (pos.x / (BUFFER_HEIGHT * 4.0 / 3.0)) * NTSC_SUBCARRIER_CYCLES  // horizontal subcarrier
+                    + 0.5 * (vline + timer * 0.01);                                   // per-line flip + upward crawl
         float dots  = cos(6.2831853 * phase);
 
-        yiq.x += dots * leak * DotCrawl * 0.2;         // inject as a luminance beat
+        yiq.x += dots * leak * DotCrawl * 0.5;         // luminance beat: ~25% swing at the 0.5
+                                                       // default, up to ~50% (intense) at 1.0
     }
+
+    yiq = ApplyGrit(yiq, pos.xy, 1.0, 1.0);            // composite: full grit (luma + noisy chroma)
 #endif  // NTSC_ADVANCED
 
     return lerp(orig, saturate(YIQtoRGB(yiq)), Strength);
